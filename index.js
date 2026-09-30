@@ -149,16 +149,16 @@ app.post('/api/productos/eliminar-todos',wrap(async r=>{
   const res=await q('UPDATE productos SET activo=false WHERE activo=true');
   return{eliminados:res.rowCount};}));
 
-// CONSULTA DNI/RUC (RENIEC/SUNAT vía apis.net.pe — requiere token gratuito en APISNET_TOKEN)
+// CONSULTA DNI/RUC (RENIEC/SUNAT vía decolecta.com — requiere token gratuito en DECOLECTA_TOKEN)
 app.get('/api/consulta/:numero',wrap(async r=>{const n=(r.params.numero||'').replace(/\D/g,'');
-  const token=process.env.APISNET_TOKEN;if(!token)throw new Error('Falta configurar APISNET_TOKEN en el servidor');
-  let url;if(n.length===8)url=`https://api.apis.net.pe/v2/reniec/dni?numero=${n}`;
-  else if(n.length===11)url=`https://api.apis.net.pe/v2/sunat/ruc?numero=${n}`;
+  const token=process.env.DECOLECTA_TOKEN;if(!token)throw new Error('Falta configurar DECOLECTA_TOKEN en el servidor');
+  let url;if(n.length===8)url=`https://api.decolecta.com/v1/reniec/dni?numero=${n}`;
+  else if(n.length===11)url=`https://api.decolecta.com/v1/sunat/ruc?numero=${n}`;
   else throw new Error('El número debe tener 8 dígitos (DNI) u 11 (RUC)');
   const resp=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
-  if(!resp.ok)throw new Error('No se encontró el documento o el servicio no respondió');
+  if(!resp.ok)throw new Error(`No se encontró el documento o el servicio no respondió (código ${resp.status})`);
   const d=await resp.json();
-  if(n.length===8)return{identificacion:n,nombre:[d.nombres,d.apellidoPaterno,d.apellidoMaterno].filter(Boolean).join(' '),direccion:d.direccion||''};
-  return{identificacion:n,nombre:d.nombre||d.razonSocial||'',direccion:d.direccion||''};}));
+  if(n.length===8)return{identificacion:n,nombre:d.full_name||[d.first_name,d.first_last_name,d.second_last_name].filter(Boolean).join(' '),direccion:''};
+  return{identificacion:n,nombre:d.razon_social||'',direccion:d['dirección']||d.direccion||''};}));
 
 module.exports=app;
