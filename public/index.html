@@ -1,5 +1,6 @@
 <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="manifest" href="manifest.json"><title>POS Minimarket</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--pri:#10B981;--sec:#1E293B;--bg:#F8FAFC;--red:#EF4444}*{box-sizing:border-box}body{margin:0;font:15px Inter,Roboto,sans-serif;background:var(--bg);padding-bottom:130px}
 header{background:var(--sec);color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
@@ -21,7 +22,15 @@ main{padding:12px;max-width:900px;margin:auto}input,select,button{font:inherit;p
 <video id="vid" class="hide" style="width:100%;border-radius:10px" playsinline></video><div id="res"></div><h4>Carrito</h4><div id="cart"></div>
 <div class="card"><b>Cliente:</b> <span id="cliSel">Cliente Varios</span> <button onclick="abrirCliModal()" style="width:auto">Cambiar</button></div></section>
 
-<section id="inv" class="hide"><button class="btn" onclick="nuevoProd()">+ Producto</button>
+<section id="inv" class="hide">
+<div class="card"><h4>Carga masiva</h4>
+<div class="row"><button class="btn" onclick="nuevoProd()" style="width:auto">+ Producto</button>
+<button onclick="plantillaExcel()" style="width:auto">⬇ Plantilla Excel</button></div>
+<div class="row" style="margin-top:6px"><input type="file" id="fileExcel" accept=".xlsx,.xls,.csv" style="flex:2">
+<button class="btn" onclick="importarExcel()" style="flex:1">⬆ Importar</button></div>
+<div id="importRes" style="margin-top:6px"></div>
+<button class="bad" style="width:100%;margin-top:10px;background:#fff;border:1px solid var(--red);color:var(--red)" onclick="eliminarTodo()">🗑 Eliminar TODO el inventario</button>
+</div>
 <input id="qi" placeholder="Buscar en inventario"><div id="lista"></div><h4>Por vencer (30 días)</h4><div id="venc"></div></section>
 
 <section id="cli" class="hide"><button class="btn" onclick="editarCliente({})">+ Cliente</button>
@@ -72,8 +81,14 @@ const total=()=>cart.reduce((a,x)=>a+x.cantidad*x.precio-(x.descuento||0),0);
 // CLIENTE en la venta
 function abrirCliModal(){$('#modales').innerHTML=`<div class="modal" onclick="if(event.target==this)this.remove()"><div>
  <h4>Seleccionar cliente</h4><input id="mCliQ" placeholder="Buscar por nombre, DNI/RUC o teléfono" oninput="mCliBuscar()">
- <div id="mCliRes"></div><button class="btn2" style="width:100%;margin-top:6px" onclick="clienteSel=null;$('#cliSel').textContent='Cliente Varios';document.querySelector('.modal').remove()">Usar "Cliente Varios"</button>
+ <div id="mCliRes"></div>
+ <div class="row" style="margin-top:8px"><input id="mDoc" placeholder="DNI/RUC nuevo (consulta SUNAT/RENIEC)"><button style="width:auto" onclick="mCliConsultar()">🔍 Consultar y crear</button></div>
+ <button class="btn2" style="width:100%;margin-top:6px" onclick="clienteSel=null;$('#cliSel').textContent='Cliente Varios';document.querySelector('.modal').remove()">Usar "Cliente Varios"</button>
  </div></div>`;$('#mCliQ').focus();}
+async function mCliConsultar(){const doc=$('#mDoc').value.trim();if(!doc)return;
+ try{const d=await api('/consulta/'+doc);const r=await api('/clientes','POST',{identificacion:d.identificacion,nombre:d.nombre,direccion:d.direccion});
+  clienteSel={id:r.id,nombre:d.nombre};$('#cliSel').textContent=d.nombre;document.querySelector('.modal').remove();}
+ catch(e){alert('No se pudo consultar: '+e);}}
 async function mCliBuscar(){const v=$('#mCliQ').value;if(v.length<2)return $('#mCliRes').innerHTML='';const r=await api('/clientes?q='+encodeURIComponent(v));
  $('#mCliRes').innerHTML=r.map(c=>`<div class="card" onclick='clienteSel=${JSON.stringify(c)};$("#cliSel").textContent=clienteSel.nombre;document.querySelector(".modal").remove()'>${c.nombre} <small>${c.identificacion||''} ${c.telefono||''}</small></div>`).join('')||'<small>Sin resultados. Crea el cliente en la pestaña Clientes.</small>'}
 
@@ -113,12 +128,29 @@ $('#qi').oninput=listar;
 async function nuevoProd(){editar({})}
 async function editar(x){const g=(k,l,d)=>prompt(l,x[k]??d??'');const b={id:x.id,descripcion:g('descripcion','Descripción'),codigo_barras:g('codigo_barras','Código de barras'),codigo_interno:g('codigo_interno','Código interno'),categoria:g('categoria','Categoría'),unidad_medida:g('unidad_medida','Unidad (UN/KG/LT/PAQ)','UN'),precio_compra:+g('precio_compra','Precio compra',0),precio_venta:+g('precio_venta','Precio venta',0),stock_minimo:+g('stock_minimo','Stock mínimo',5),fecha_vencimiento:g('fecha_vencimiento','Vencimiento AAAA-MM-DD (opcional)')};
  if(!b.descripcion)return;if(!x.id)b.stock_inicial=+prompt('Stock inicial:','0');await api(x.id?'/productos/'+x.id:'/productos',x.id?'PUT':'POST',b);listar()}
+function plantillaExcel(){const wb=XLSX.utils.book_new();
+ const ws=XLSX.utils.aoa_to_sheet([['codigo_interno','codigo_barras','descripcion','categoria','unidad_medida','precio_compra','precio_venta','stock_actual','stock_minimo','fecha_vencimiento'],
+ ['P001','7751271001234','Leche Gloria Entera 1L','Lácteos','UN',3.5,4.5,24,5,'2026-12-31']]);
+ XLSX.utils.book_append_sheet(wb,ws,'Productos');XLSX.writeFile(wb,'plantilla_productos.xlsx');}
+async function importarExcel(){const f=$('#fileExcel').files[0];if(!f)return alert('Selecciona un archivo Excel/CSV primero');
+ const buf=await f.arrayBuffer();const wb=XLSX.read(buf,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];
+ const filas=XLSX.utils.sheet_to_json(ws,{defval:''});if(!filas.length)return alert('El archivo está vacío');
+ $('#importRes').innerHTML='Importando...';const r=await api('/productos/importar','POST',{filas});
+ $('#importRes').innerHTML=`<div class="card">✅ ${r.creados} creados, ${r.actualizados} actualizados${r.errores.length?`<br><span class="bad">${r.errores.length} con error:</span><br>`+r.errores.slice(0,10).join('<br>'):''}</div>`;
+ $('#fileExcel').value='';listar();}
+async function eliminarTodo(){if(!confirm('Esto desactivará TODOS los productos del inventario (el historial de ventas no se borra). ¿Continuar?'))return;
+ const c=prompt('Escribe ELIMINAR en mayúsculas para confirmar:');if(c!=='ELIMINAR')return alert('Cancelado');
+ const r=await api('/productos/eliminar-todos','POST',{confirmacion:'ELIMINAR'});alert(`${r.eliminados} productos eliminados. Ya puedes importar un Excel nuevo.`);listar();}
 async function ajustar(id){const t=prompt('1=Ingreso compra 2=Merma 3=Vencimiento 4=Autoconsumo 5=Ajuste +','1');const m={1:['INGRESO','COMPRA'],2:['SALIDA','MERMA'],3:['SALIDA','VENCIMIENTO'],4:['SALIDA','AUTOCONSUMO'],5:['INGRESO','AJUSTE']}[t];if(!m)return;const c=+prompt('Cantidad:');if(c>0)await api('/movimientos','POST',{producto_id:id,tipo:m[0],motivo:m[1],cantidad:c,usuario:caja.vendedor})}
 
 // CLIENTES (pestaña)
 async function listarClientes(){const r=await api('/clientes?q='+encodeURIComponent($('#qc')?.value||''));$('#listaCli').innerHTML=r.map(c=>`<div class="card"><b>${c.nombre}</b> <small>${c.identificacion||''} · ${c.telefono||''}</small><br><small>${c.direccion||''}</small><div><button onclick='editarCliente(${JSON.stringify(c)})'>✏ Editar</button></div></div>`).join('')||'<small>Sin clientes registrados</small>'}
 if($('#qc'))$('#qc').oninput=listarClientes;
-async function editarCliente(c){const g=(k,l,d)=>prompt(l,c[k]??d??'');const b={id:c.id,nombre:g('nombre','Nombre completo / Razón social'),identificacion:g('identificacion','DNI / RUC'),telefono:g('telefono','Teléfono'),direccion:g('direccion','Dirección')};
+async function editarCliente(c){let pre={};
+ const doc=prompt('DNI (8 dígitos) o RUC (11 dígitos) — déjalo vacío para llenar todo a mano:',c.identificacion||'');
+ if(doc&&doc.trim()){try{pre=await api('/consulta/'+doc.trim());}catch(e){alert('No se pudo consultar automáticamente: '+e+'. Completa los datos a mano.');pre={identificacion:doc.trim()};}}
+ const base={...c,...pre};const g=(k,l,d)=>prompt(l,base[k]??d??'');
+ const b={id:c.id,nombre:g('nombre','Nombre completo / Razón social'),identificacion:g('identificacion','DNI / RUC',base.identificacion),telefono:g('telefono','Teléfono'),direccion:g('direccion','Dirección',base.direccion)};
  if(!b.nombre)return;await api(c.id?'/clientes/'+c.id:'/clientes',c.id?'PUT':'POST',b);listarClientes()}
 
 // CAJA
@@ -144,8 +176,8 @@ $('#cam').onclick=async()=>{if(!('BarcodeDetector'in window))return alert('Tu na
 // Sincronización en tiempo real entre PC y celular vía Supabase Realtime.
 // SUPABASE_URL y SUPABASE_ANON_KEY son públicas por diseño (solo permiten LEER,
 // nunca escribir; todas las escrituras pasan por /api con la llave secreta del servidor).
-const SUPABASE_URL='https://asbldrdnrqnhuurjpppy.supabase.co';
-const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFzYmxkcmRucnFuaHV1cmpwcHB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3MTIyNTEsImV4cCI6MjEwNjI4ODI1MX0.yhCb_XmB0WBgXKgaA_S6f0ZnxHaizBVlyWvG-pqaxao';
+const SUPABASE_URL='https://TU-PROYECTO.supabase.co';
+const SUPABASE_ANON_KEY='TU_ANON_KEY_AQUI';
 if(!SUPABASE_URL.includes('TU-PROYECTO')){
   const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   sb.channel('sync-productos').on('postgres_changes',{event:'*',schema:'public',table:'productos'},()=>{listar();buscar();}).subscribe();
