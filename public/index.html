@@ -1,0 +1,155 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="manifest" href="manifest.json"><title>POS Minimarket</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--pri:#10B981;--sec:#1E293B;--bg:#F8FAFC;--red:#EF4444}*{box-sizing:border-box}body{margin:0;font:15px Inter,Roboto,sans-serif;background:var(--bg);padding-bottom:130px}
+header{background:var(--sec);color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
+nav{display:flex;background:#fff;border-bottom:1px solid #e2e8f0;flex-wrap:wrap}nav button{flex:1;min-width:70px;padding:12px 4px;border:0;background:none;font-weight:600;font-size:13px}nav button.on{border-bottom:3px solid var(--pri);color:var(--pri)}
+main{padding:12px;max-width:900px;margin:auto}input,select,button{font:inherit;padding:9px;border:1px solid #cbd5e1;border-radius:8px}input,select{width:100%;margin:3px 0}
+.btn{background:var(--pri);color:#fff;border:0;font-weight:700}.btn2{background:var(--sec);color:#fff;border:0}.row{display:flex;gap:6px;align-items:center}.row>*{flex:1}
+.card{background:#fff;border-radius:10px;padding:10px;margin:6px 0;box-shadow:0 1px 3px #0001}.num{font-variant-numeric:tabular-nums;font-family:ui-monospace,monospace}.bad{color:var(--red);font-weight:700}
+.bar{position:fixed;bottom:0;left:0;right:0;background:#fff;padding:10px;border-top:1px solid #e2e8f0}.bar .btn{width:100%;padding:14px;font-size:17px}
+.hide{display:none}.chk{display:flex;align-items:center;gap:8px;width:auto}small{color:#64748b}a.btn2{display:inline-block;text-decoration:none;text-align:center}
+#ticket{display:none}@media print{body>*:not(#ticket){display:none!important}#ticket{display:block;font:12px monospace}}
+.modal{position:fixed;inset:0;background:#0008;display:flex;align-items:flex-end;z-index:20}.modal>div{background:#fff;width:100%;max-width:480px;margin:auto;border-radius:14px 14px 0 0;padding:16px;max-height:85vh;overflow:auto}
+</style></head><body>
+<header><b id="est">Cargando…</b><span id="vend"></span></header>
+<nav>
+<button data-t="venta" class="on">Venta</button><button data-t="inv">Inventario</button><button data-t="cli">Clientes</button>
+<button data-t="caja">Caja</button><button data-t="rep">Reportes</button><button data-t="cfg">Ticket</button></nav>
+<main>
+<section id="venta"><div class="row"><input id="q" placeholder="🔍 Buscar / escanear código" autofocus><button id="cam" style="flex:0 0 52px">📷</button></div>
+<video id="vid" class="hide" style="width:100%;border-radius:10px" playsinline></video><div id="res"></div><h4>Carrito</h4><div id="cart"></div>
+<div class="card"><b>Cliente:</b> <span id="cliSel">Cliente Varios</span> <button onclick="abrirCliModal()" style="width:auto">Cambiar</button></div></section>
+
+<section id="inv" class="hide"><button class="btn" onclick="nuevoProd()">+ Producto</button>
+<input id="qi" placeholder="Buscar en inventario"><div id="lista"></div><h4>Por vencer (30 días)</h4><div id="venc"></div></section>
+
+<section id="cli" class="hide"><button class="btn" onclick="editarCliente({})">+ Cliente</button>
+<input id="qc" placeholder="Buscar por nombre, DNI/RUC o teléfono"><div id="listaCli"></div></section>
+
+<section id="caja" class="hide"><div id="cajaUI"></div></section>
+
+<section id="rep" class="hide">
+<div class="card"><h4>Stock actual</h4><div class="row"><a class="btn2 row" href="/api/reportes/stock.csv">⬇ Excel</a><a class="btn2 row" href="/api/reportes/stock.pdf">⬇ PDF</a></div></div>
+<div class="card"><h4>Rotación / salidas por rango de fecha</h4>
+<div class="row"><input id="rDesde" type="date"><input id="rHasta" type="date"></div>
+<div class="row"><select id="rTipo"><option value="">Tipo (todos)</option><option value="INGRESO">Ingreso</option><option value="SALIDA">Salida</option></select>
+<select id="rMotivo"><option value="">Motivo (todos)</option><option>VENTA</option><option>COMPRA</option><option>MERMA</option><option>VENCIMIENTO</option><option>AUTOCONSUMO</option><option>AJUSTE</option><option>INVENTARIO_INICIAL</option></select></div>
+<button class="btn" onclick="verRotacion()">Consultar</button>
+<div class="row"><a class="btn2 row" id="rCsv" href="#">⬇ Excel</a><a class="btn2 row" id="rPdf" href="#">⬇ PDF</a></div>
+<div id="rotacionRes" style="max-height:300px;overflow:auto;margin-top:8px"></div></div>
+</section>
+
+<section id="cfg" class="hide"><div class="card">
+<input id="c_nombre" placeholder="Nombre comercial"><input id="c_ruc" placeholder="RUC/NIT"><input id="c_dir" placeholder="Dirección"><input id="c_tel" placeholder="Teléfono">
+<input id="c_pie" placeholder="Mensaje al pie">
+<label>Formato de ticket</label><select id="c_ancho"><option value="80">80mm</option><option value="58">58mm</option><option value="A4">Hoja A4</option></select>
+<label class="chk"><input type="checkbox" id="c_vend"> Mostrar vendedor</label>
+<label class="chk"><input type="checkbox" id="c_cli"> Mostrar cliente</label>
+<label class="chk"><input type="checkbox" id="c_imp"> Mostrar desglose de impuestos (IGV 18%)</label>
+<button class="btn" onclick="guardarCfg()">Guardar</button></div></section>
+</main>
+<div class="bar" id="pay"><div class="row" style="margin-bottom:6px"><b>TOTAL</b><b class="num" id="tot" style="text-align:right;font-size:22px">S/ 0.00</b></div><button class="btn" onclick="abrirPagoModal()">💳 COBRAR</button></div>
+<div id="ticket"></div>
+<div id="modales"></div>
+<script>
+const $=s=>document.querySelector(s),money=n=>'S/ '+(+n).toFixed(2);let cart=[],caja={},cfg={},clienteSel=null;
+const api=async(u,m='GET',b)=>{const r=await fetch('/api'+u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});const j=await r.json();if(j.error){alert(j.error);throw j.error}return j};
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x==b));['venta','inv','cli','caja','rep','cfg'].forEach(t=>$('#'+t).classList.toggle('hide',t!=b.dataset.t));$('#pay').classList.toggle('hide',b.dataset.t!='venta');refresh()});
+async function refresh(){caja=await api('/caja');cfg=await api('/config');$('#est').textContent=caja.id?'🟢 CAJA ABIERTA':'🔴 CAJA CERRADA';$('#vend').textContent=caja.vendedor||'';
+ $('#c_nombre').value=cfg.nombre||'';$('#c_ruc').value=cfg.ruc||'';$('#c_dir').value=cfg.dir||'';$('#c_tel').value=cfg.tel||'';$('#c_pie').value=cfg.pie||'';
+ $('#c_ancho').value=cfg.ticket_ancho||'80';$('#c_vend').checked=cfg.mostrar_vendedor!=='0';$('#c_cli').checked=cfg.mostrar_cliente!=='0';$('#c_imp').checked=cfg.mostrar_impuestos==='1';
+ listar();listarClientes();cajaView();buscar()}
+async function buscar(){const p=await api('/productos?q='+encodeURIComponent($('#q').value));$('#res').innerHTML=$('#q').value?p.slice(0,8).map(x=>`<div class="card row" onclick='add(${JSON.stringify(x)})'><span>${x.descripcion}</span><span class="num" style="text-align:right">${money(x.precio_venta)} · <span class="${x.stock_actual<=x.stock_minimo?'bad':''}">${x.stock_actual}</span></span></div>`).join(''):''}
+$('#q').oninput=buscar;$('#q').onkeydown=async e=>{if(e.key==='Enter'){const p=await api('/productos/barcode/'+encodeURIComponent($('#q').value));if(p.id)add(p);}};
+function add(p){const i=cart.find(x=>x.producto_id==p.id);i?i.cantidad++:cart.push({producto_id:p.id,desc:p.descripcion,cantidad:1,precio:p.precio_venta,descuento:0});$('#q').value='';$('#res').innerHTML='';navigator.vibrate&&navigator.vibrate(40);draw()}
+function draw(){$('#cart').innerHTML=cart.map((x,n)=>`<div class="card"><div class="row"><span>${x.desc}</span><button onclick="cart.splice(${n},1);draw()" style="width:auto">🗑</button></div>
+ <div class="row"><input type="number" step="any" value="${x.cantidad}" onchange="cart[${n}].cantidad=+this.value;draw()" placeholder="Cant."><input type="number" step="0.01" value="${x.precio}" onchange="cart[${n}].precio=+this.value;draw()" placeholder="Precio">
+ <input type="number" step="0.01" value="${x.descuento||0}" onchange="cart[${n}].descuento=+this.value;draw()" placeholder="Desc. S/"></div>
+ <div class="num" style="text-align:right">Subtotal: ${money(x.cantidad*x.precio-(x.descuento||0))}</div></div>`).join('');$('#tot').textContent=money(total())}
+const total=()=>cart.reduce((a,x)=>a+x.cantidad*x.precio-(x.descuento||0),0);
+
+// CLIENTE en la venta
+function abrirCliModal(){$('#modales').innerHTML=`<div class="modal" onclick="if(event.target==this)this.remove()"><div>
+ <h4>Seleccionar cliente</h4><input id="mCliQ" placeholder="Buscar por nombre, DNI/RUC o teléfono" oninput="mCliBuscar()">
+ <div id="mCliRes"></div><button class="btn2" style="width:100%;margin-top:6px" onclick="clienteSel=null;$('#cliSel').textContent='Cliente Varios';document.querySelector('.modal').remove()">Usar "Cliente Varios"</button>
+ </div></div>`;$('#mCliQ').focus();}
+async function mCliBuscar(){const v=$('#mCliQ').value;if(v.length<2)return $('#mCliRes').innerHTML='';const r=await api('/clientes?q='+encodeURIComponent(v));
+ $('#mCliRes').innerHTML=r.map(c=>`<div class="card" onclick='clienteSel=${JSON.stringify(c)};$("#cliSel").textContent=clienteSel.nombre;document.querySelector(".modal").remove()'>${c.nombre} <small>${c.identificacion||''} ${c.telefono||''}</small></div>`).join('')||'<small>Sin resultados. Crea el cliente en la pestaña Clientes.</small>'}
+
+// COBRO / PAGO MIXTO
+function abrirPagoModal(){if(!caja.id)return alert('Abre la caja en la pestaña Caja');if(!cart.length)return alert('Carrito vacío');
+ const t=total();$('#modales').innerHTML=`<div class="modal"><div><h4>Cobrar — Total ${money(t)}</h4>
+ <div id="pagos"></div><button class="btn2" style="width:auto" onclick="agregarPago()">+ Agregar método de pago</button>
+ <div class="row" style="margin-top:8px"><b>Pagado:</b> <b class="num" id="pagadoTxt">S/ 0.00</b></div>
+ <button class="btn" style="width:100%;margin-top:8px" onclick="confirmarCobro(${t})">Registrar e imprimir</button>
+ <button style="width:100%;margin-top:6px" onclick="document.querySelector('.modal').remove()">Cancelar</button></div></div>`;
+ window._pagos=[{metodo:'EFECTIVO',monto:t}];drawPagos();}
+function drawPagos(){$('#pagos').innerHTML=window._pagos.map((p,i)=>`<div class="row"><select onchange="window._pagos[${i}].metodo=this.value">
+ <option value="EFECTIVO" ${p.metodo=='EFECTIVO'?'selected':''}>Efectivo</option><option value="TARJETA" ${p.metodo=='TARJETA'?'selected':''}>Tarjeta</option>
+ <option value="YAPE" ${p.metodo=='YAPE'?'selected':''}>Yape/Plin</option></select>
+ <input type="number" step="0.01" value="${p.monto}" onchange="window._pagos[${i}].monto=+this.value;drawPagos()">
+ ${window._pagos.length>1?`<button onclick="window._pagos.splice(${i},1);drawPagos()" style="width:auto">🗑</button>`:''}</div>`).join('');
+ $('#pagadoTxt').textContent=money(window._pagos.reduce((a,p)=>a+(+p.monto||0),0));}
+function agregarPago(){window._pagos.push({metodo:'EFECTIVO',monto:0});drawPagos()}
+async function confirmarCobro(t){const pagado=window._pagos.reduce((a,p)=>a+(+p.monto||0),0);if(pagado<t-0.01)return alert('El pago no cubre el total');
+ const r=await api('/ventas','POST',{items:cart,pagos:window._pagos,cliente_id:clienteSel?.id,cliente:clienteSel?.nombre});
+ document.querySelector('.modal').remove();imprimir(r.id);alert(`Venta #${r.id} registrada. Vuelto: ${money(r.vuelto)}`);cart=[];clienteSel=null;$('#cliSel').textContent='Cliente Varios';draw()}
+async function imprimir(id){const {venta:v,items,pagos}=await api('/ventas/'+id);const ancho=cfg.ticket_ancho||'80';
+ const w=ancho==='A4'?'auto':(ancho+'mm');document.getElementById('ticket').style.width=w;
+ let h=`<center><b>${cfg.nombre||'MINIMARKET'}</b><br>RUC ${cfg.ruc||''}<br>${cfg.dir||''}<br>${cfg.tel||''}</center><hr>Ticket #${v.id} ${v.fecha}<br>`;
+ if(cfg.mostrar_cliente!=='0')h+=`Cliente: ${v.cliente}<br>`;if(cfg.mostrar_vendedor!=='0')h+=`Vendedor: ${v.vendedor||''}<br>`;h+='<hr>';
+ h+=items.map(i=>`${i.descripcion}<br>&nbsp;${i.cantidad} x ${i.precio_unitario.toFixed(2)}${i.descuento?` − ${i.descuento.toFixed(2)}`:''} = ${i.subtotal.toFixed(2)}<br>`).join('');
+ h+=`<hr><b>TOTAL ${money(v.total)}</b><br>`;
+ if(cfg.mostrar_impuestos==='1'){const base=v.total/1.18,igv=v.total-base;h+=`Base: ${money(base)} · IGV(18%): ${money(igv)}<br>`;}
+ h+=pagos.map(p=>`${p.metodo}: ${money(p.monto)}<br>`).join('');
+ h+=`<hr><center>${cfg.pie||'¡Gracias por su compra!'}</center>`;
+ document.getElementById('ticket').innerHTML=h;setTimeout(()=>window.print(),200)}
+
+// INVENTARIO
+async function listar(){const p=await api('/productos?q='+encodeURIComponent($('#qi').value||''));$('#lista').innerHTML=p.map(x=>`<div class="card"><b>${x.descripcion}</b> <small>${x.codigo_barras||''}</small><div class="row num"><span>${money(x.precio_venta)}</span><span class="${x.stock_actual<=x.stock_minimo?'bad':''}">Stock ${x.stock_actual}</span><button onclick="ajustar(${x.id})">± Stock</button><button onclick='editar(${JSON.stringify(x)})'>✏</button></div></div>`).join('');
+ const v=await api('/reportes/vencimientos?dias=30');$('#venc').innerHTML=v.map(x=>`<div class="card bad">${x.descripcion} — ${x.fecha_vencimiento} (${x.stock_actual})</div>`).join('')||'Sin alertas'}
+$('#qi').oninput=listar;
+async function nuevoProd(){editar({})}
+async function editar(x){const g=(k,l,d)=>prompt(l,x[k]??d??'');const b={id:x.id,descripcion:g('descripcion','Descripción'),codigo_barras:g('codigo_barras','Código de barras'),codigo_interno:g('codigo_interno','Código interno'),categoria:g('categoria','Categoría'),unidad_medida:g('unidad_medida','Unidad (UN/KG/LT/PAQ)','UN'),precio_compra:+g('precio_compra','Precio compra',0),precio_venta:+g('precio_venta','Precio venta',0),stock_minimo:+g('stock_minimo','Stock mínimo',5),fecha_vencimiento:g('fecha_vencimiento','Vencimiento AAAA-MM-DD (opcional)')};
+ if(!b.descripcion)return;if(!x.id)b.stock_inicial=+prompt('Stock inicial:','0');await api(x.id?'/productos/'+x.id:'/productos',x.id?'PUT':'POST',b);listar()}
+async function ajustar(id){const t=prompt('1=Ingreso compra 2=Merma 3=Vencimiento 4=Autoconsumo 5=Ajuste +','1');const m={1:['INGRESO','COMPRA'],2:['SALIDA','MERMA'],3:['SALIDA','VENCIMIENTO'],4:['SALIDA','AUTOCONSUMO'],5:['INGRESO','AJUSTE']}[t];if(!m)return;const c=+prompt('Cantidad:');if(c>0)await api('/movimientos','POST',{producto_id:id,tipo:m[0],motivo:m[1],cantidad:c,usuario:caja.vendedor})}
+
+// CLIENTES (pestaña)
+async function listarClientes(){const r=await api('/clientes?q='+encodeURIComponent($('#qc')?.value||''));$('#listaCli').innerHTML=r.map(c=>`<div class="card"><b>${c.nombre}</b> <small>${c.identificacion||''} · ${c.telefono||''}</small><br><small>${c.direccion||''}</small><div><button onclick='editarCliente(${JSON.stringify(c)})'>✏ Editar</button></div></div>`).join('')||'<small>Sin clientes registrados</small>'}
+if($('#qc'))$('#qc').oninput=listarClientes;
+async function editarCliente(c){const g=(k,l,d)=>prompt(l,c[k]??d??'');const b={id:c.id,nombre:g('nombre','Nombre completo / Razón social'),identificacion:g('identificacion','DNI / RUC'),telefono:g('telefono','Teléfono'),direccion:g('direccion','Dirección')};
+ if(!b.nombre)return;await api(c.id?'/clientes/'+c.id:'/clientes',c.id?'PUT':'POST',b);listarClientes()}
+
+// CAJA
+async function cajaView(){if(!caja.id){$('#cajaUI').innerHTML=`<div class="card"><input id="vn" placeholder="Vendedor"><input id="mi" type="number" placeholder="Monto inicial (cambio)"><button class="btn" onclick="abrir()">Abrir caja</button></div>`;return}
+ const s=await api('/caja/resumen');$('#cajaUI').innerHTML=`<div class="card num">Inicial ${money(caja.monto_inicial)}<br>Ventas efectivo ${money(s.efectivo_ventas)}<br>Tarjeta ${money(s.tarjeta)} · Yape/otros ${money(s.otros)}<br>Entradas ${money(s.entradas)} · Salidas ${money(s.salidas)}<br><b>Efectivo esperado ${money(s.esperado_efectivo)}</b></div>
+ <div class="row"><button onclick="movCaja('ENTRADA')">+ Entrada</button><button onclick="movCaja('SALIDA')">− Salida</button></div><div class="card"><input id="cont" type="number" placeholder="Efectivo contado"><button class="btn" onclick="cerrar()">Cerrar caja (arqueo)</button></div>`}
+async function abrir(){await api('/caja/abrir','POST',{vendedor:$('#vn').value,monto_inicial:+$('#mi').value});refresh()}
+async function movCaja(t){const m=+prompt('Monto:');if(m>0){await api('/caja/movimiento','POST',{tipo:t,monto:m,motivo:prompt('Motivo:')});refresh()}}
+async function cerrar(){const r=await api('/caja/cerrar','POST',{efectivo_contado:+$('#cont').value});alert(`${r.resultado}\nEsperado ${money(r.esperado_efectivo)}\nContado ${money(r.contado)}\nDiferencia ${money(r.diferencia)}`);refresh()}
+
+// REPORTES
+function qsRep(){const p=new URLSearchParams();if($('#rDesde').value)p.set('desde',$('#rDesde').value);if($('#rHasta').value)p.set('hasta',$('#rHasta').value);if($('#rTipo').value)p.set('tipo',$('#rTipo').value);if($('#rMotivo').value)p.set('motivo',$('#rMotivo').value);return p.toString()}
+async function verRotacion(){const qs=qsRep();const r=await api('/reportes/rotacion?'+qs);
+ $('#rotacionRes').innerHTML=r.map(x=>`<div class="card"><small>${x.fecha?.slice(0,16)}</small> <b>${x.descripcion}</b><br>${x.tipo} · ${x.motivo} · ${x.cantidad} · ${x.usuario||''}</div>`).join('')||'Sin movimientos en ese rango';
+ $('#rCsv').href='/api/reportes/rotacion.csv?'+qs;$('#rPdf').href='/api/reportes/rotacion.pdf?'+qs;}
+
+// CONFIG
+async function guardarCfg(){await api('/config','POST',{nombre:$('#c_nombre').value,ruc:$('#c_ruc').value,dir:$('#c_dir').value,tel:$('#c_tel').value,pie:$('#c_pie').value,
+ ticket_ancho:$('#c_ancho').value,mostrar_vendedor:$('#c_vend').checked?'1':'0',mostrar_cliente:$('#c_cli').checked?'1':'0',mostrar_impuestos:$('#c_imp').checked?'1':'0'});alert('Guardado');refresh()}
+
+$('#cam').onclick=async()=>{if(!('BarcodeDetector'in window))return alert('Tu navegador no soporta escaneo; usa Chrome en Android o un lector USB.');const v=$('#vid');v.classList.remove('hide');v.srcObject=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});v.play();
+ const d=new BarcodeDetector({formats:['ean_13','code_128','ean_8','upc_a']});const t=setInterval(async()=>{const c=await d.detect(v);if(c.length){clearInterval(t);v.srcObject.getTracks().forEach(x=>x.stop());v.classList.add('hide');const p=await api('/productos/barcode/'+c[0].rawValue);p.id?add(p):alert('No registrado: '+c[0].rawValue)}},400)};
+// Sincronización en tiempo real entre PC y celular vía Supabase Realtime.
+// SUPABASE_URL y SUPABASE_ANON_KEY son públicas por diseño (solo permiten LEER,
+// nunca escribir; todas las escrituras pasan por /api con la llave secreta del servidor).
+const SUPABASE_URL='https://TU-PROYECTO.supabase.co';
+const SUPABASE_ANON_KEY='TU_ANON_KEY_AQUI';
+if(!SUPABASE_URL.includes('TU-PROYECTO')){
+  const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+  sb.channel('sync-productos').on('postgres_changes',{event:'*',schema:'public',table:'productos'},()=>{listar();buscar();}).subscribe();
+  sb.channel('sync-cajas').on('postgres_changes',{event:'*',schema:'public',table:'cajas'},()=>{cajaView();}).subscribe();
+}
+refresh();draw();
+</script></body></html>
