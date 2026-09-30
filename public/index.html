@@ -144,8 +144,8 @@ $('#cam').onclick=async()=>{if(!('BarcodeDetector'in window))return alert('Tu na
 // Sincronización en tiempo real entre PC y celular vía Supabase Realtime.
 // SUPABASE_URL y SUPABASE_ANON_KEY son públicas por diseño (solo permiten LEER,
 // nunca escribir; todas las escrituras pasan por /api con la llave secreta del servidor).
-const SUPABASE_URL='https://TU-PROYECTO.supabase.co';
-const SUPABASE_ANON_KEY='TU_ANON_KEY_AQUI';
+const SUPABASE_URL='https://asbldrdnrqnhuurjpppy.supabase.co';
+const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFzYmxkcmRucnFuaHV1cmpwcHB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3MTIyNTEsImV4cCI6MjEwNjI4ODI1MX0.yhCb_XmB0WBgXKgaA_S6f0ZnxHaizBVlyWvG-pqaxao';
 if(!SUPABASE_URL.includes('TU-PROYECTO')){
   const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   sb.channel('sync-productos').on('postgres_changes',{event:'*',schema:'public',table:'productos'},()=>{listar();buscar();}).subscribe();
